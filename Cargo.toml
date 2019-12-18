@@ -1,0 +1,15 @@
+[package]
+name = "signalling-server"
+version = "0.1.0"
+authors = ["dvvvvvv <dvvvvvv@dvvvvvv.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+actix-web = "2.0.0-alpha.6"
+actix-rt = "^1.0.0"
+actix-web-actors = "2.0.0-alpha.1"
+actix = "0.9.0-alpha.2"
+serde = "1"
+serde_json = "1"
