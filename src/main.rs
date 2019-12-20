@@ -119,15 +119,14 @@ impl Handler<Arc<SessionDescriptionMessage>> for SignalSocket {
 }
 
 #[derive(Serialize, Deserialize, Clone)]
-enum SignalType {
-    Offer,
-    Answer,
+enum Signal {
+    Offer(SessionDescriptionMessage),
+    Answer(SessionDescriptionMessage),
     NewIceCandidate,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
 struct SessionDescriptionMessage {
-    signal_type: SignalType,
     target: String,
     name: String,
 }
