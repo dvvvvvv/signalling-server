@@ -64,7 +64,7 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for SignalSocket {
                 context.stop();
             }
             Ok(ws::Message::Text(message)) => {
-                if let Ok(signal_message) = SessionDescriptionMessage::parse_json(&message) {
+                if let Ok(signal_message) = Signal::parse_json(&message) {
                     let resolved_channel: &SignalChannel = &self.channel.lock().unwrap();
                     resolved_channel.broadcast(signal_message);
                 }
@@ -104,15 +104,15 @@ impl std::error::Error for MessageSendError {
     }
 }
 
-impl Handler<Arc<SessionDescriptionMessage>> for SignalSocket {
+impl Handler<Arc<Signal>> for SignalSocket {
     type Result = Result<(), MessageSendError>;
 
     fn handle(
         &mut self,
-        message: Arc<SessionDescriptionMessage>,
+        message: Arc<Signal>,
         context: &mut Self::Context,
     ) -> Result<(), MessageSendError> {
-        let resolved_message: &SessionDescriptionMessage = &message;
+        let resolved_message: &Signal = &message;
         context.text(serde_json::to_string(resolved_message)?);
         Ok(())
     }
@@ -131,18 +131,18 @@ struct SessionDescriptionMessage {
     name: String,
 }
 
-impl SessionDescriptionMessage{
-pub fn parse_json(s: &str) -> serde_json::Result<Self> {
+impl Signal {
+    pub fn parse_json(s: &str) -> serde_json::Result<Self> {
         serde_json::from_str(s)
     }
 }
 
-impl Message for SessionDescriptionMessage {
+impl Message for Signal {
     type Result = Result<(), MessageSendError>;
 }
 
 struct SignalChannel {
-    sockets: Vec<Recipient<Arc<SessionDescriptionMessage>>>,
+    sockets: Vec<Recipient<Arc<Signal>>>,
 }
 
 impl Default for SignalChannel {
@@ -154,21 +154,21 @@ impl Default for SignalChannel {
 }
 
 impl SignalChannel {
-    pub fn broadcast(&self, message: SessionDescriptionMessage) {
+    pub fn broadcast(&self, message: Signal) {
         let message_ptr = Arc::new(message);
         for socket in &self.sockets {
             socket.do_send(message_ptr.clone()).unwrap();
         }
     }
 
-    pub fn join(&mut self, recipient: Recipient<Arc<SessionDescriptionMessage>>) {
+    pub fn join(&mut self, recipient: Recipient<Arc<Signal>>) {
         if self.check_not_exists(&recipient) {
             println!("joined");
             self.sockets.push(recipient);
         }
     }
 
-    pub fn exit(&mut self, addr: &Recipient<Arc<SessionDescriptionMessage>>) {
+    pub fn exit(&mut self, addr: &Recipient<Arc<Signal>>) {
         if let Some(position) = self
             .sockets
             .iter()
@@ -178,7 +178,7 @@ impl SignalChannel {
         }
     }
 
-    fn check_not_exists(&self, addr: &Recipient<Arc<SessionDescriptionMessage>>) -> bool {
+    fn check_not_exists(&self, addr: &Recipient<Arc<Signal>>) -> bool {
         self.sockets
             .iter()
             .all(|existing_socket| existing_socket != addr)
