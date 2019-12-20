@@ -1,5 +1,5 @@
 use actix::prelude::{
-    Actor, ActorContext, AsyncContext, Handler, Message, Recipient, StreamHandler,
+    Actor, ActorContext, Addr, AsyncContext, Handler, Message, StreamHandler,
 };
 use actix_web::{middleware, web, App, HttpRequest, HttpServer, Responder};
 use actix_web_actors::ws;
@@ -11,28 +11,30 @@ type SignalServerStateData = web::Data<Mutex<SignalServerState>>;
 
 async fn index(
     state: SignalServerStateData,
-    path: web::Path<u32>,
     request: HttpRequest,
     stream: web::Payload,
 ) -> impl Responder {
-    let channel = state
-        .lock()
-        .unwrap()
-        .channels
-        .entry(*path)
-        .or_insert_with(|| Arc::new(Mutex::new(SignalChannel::default())))
-        .clone();
-    state.lock().unwrap().count += 1;
-    ws::start(SignalSocket::new(channel), &request, stream)
+    let mut resolved_server_state = state.lock().unwrap();
+    ws::start(
+        SignalSocket::new("asdf".to_owned(), &mut resolved_server_state),
+        &request,
+        stream,
+    )
 }
 
 struct SignalSocket {
-    channel: Arc<Mutex<SignalChannel>>,
+    user_name: String,
+    another_sockets: Arc<Mutex<HashMap<String, Addr<SignalSocket>>>>,
 }
 
 impl SignalSocket {
-    fn new(channel: Arc<Mutex<SignalChannel>>) -> Self {
-        return SignalSocket { channel };
+    fn new(user_name: String, server_state: &mut SignalServerState) -> Self {
+        let new_signal_socket = SignalSocket {
+            user_name,
+            another_sockets: server_state.sockets.clone(),
+        };
+
+        return new_signal_socket;
     }
 }
 
@@ -40,14 +42,14 @@ impl Actor for SignalSocket {
     type Context = ws::WebsocketContext<Self>;
 
     fn started(&mut self, context: &mut Self::Context) {
-        let resolved_channel: &mut SignalChannel = &mut self.channel.lock().unwrap();
-        resolved_channel.join(context.address().recipient());
+        let mut resolved_another_sockets = self.another_sockets.lock().unwrap();
+        resolved_another_sockets.insert(self.user_name.clone(), context.address());
         println!("Signal Socket Opened")
     }
 
-    fn stopped(&mut self, context: &mut Self::Context) {
-        let resolved_channel: &mut SignalChannel = &mut self.channel.lock().unwrap();
-        resolved_channel.exit(&context.address().recipient());
+    fn stopped(&mut self, _: &mut Self::Context) {
+        let mut resolved_another_sockets = self.another_sockets.lock().unwrap();
+        resolved_another_sockets.remove(&self.user_name);
         println!("Signal Socket Closed")
     }
 }
@@ -62,12 +64,6 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for SignalSocket {
             Ok(ws::Message::Close(_)) => {
                 println!("close request received. closing.");
                 context.stop();
-            }
-            Ok(ws::Message::Text(message)) => {
-                if let Ok(signal_message) = Signal::parse_json(&message) {
-                    let resolved_channel: &SignalChannel = &self.channel.lock().unwrap();
-                    resolved_channel.broadcast(signal_message);
-                }
             }
             Ok(_) => {
                 println!("some messaged received.");
@@ -147,72 +143,26 @@ impl Message for Signal {
     type Result = Result<(), MessageSendError>;
 }
 
-struct SignalChannel {
-    sockets: Vec<Recipient<Arc<Signal>>>,
-}
-
-impl Default for SignalChannel {
-    fn default() -> Self {
-        SignalChannel {
-            sockets: Vec::new(),
-        }
-    }
-}
-
-impl SignalChannel {
-    pub fn broadcast(&self, message: Signal) {
-        let message_ptr = Arc::new(message);
-        for socket in &self.sockets {
-            socket.do_send(message_ptr.clone()).unwrap();
-        }
-    }
-
-    pub fn join(&mut self, recipient: Recipient<Arc<Signal>>) {
-        if self.check_not_exists(&recipient) {
-            println!("joined");
-            self.sockets.push(recipient);
-        }
-    }
-
-    pub fn exit(&mut self, addr: &Recipient<Arc<Signal>>) {
-        if let Some(position) = self
-            .sockets
-            .iter()
-            .position(|existing_socket| existing_socket == addr)
-        {
-            self.sockets.remove(position);
-        }
-    }
-
-    fn check_not_exists(&self, addr: &Recipient<Arc<Signal>>) -> bool {
-        self.sockets
-            .iter()
-            .all(|existing_socket| existing_socket != addr)
-    }
-}
-
 struct SignalServerState {
-    channels: HashMap<u32, Arc<Mutex<SignalChannel>>>,
-    count: u32,
+    sockets: Arc<Mutex<HashMap<String, Addr<SignalSocket>>>>,
 }
 
-impl SignalServerState {
-    fn new() -> Self {
-        return SignalServerState {
-            channels: HashMap::new(),
-            count: 0,
-        };
+impl Default for SignalServerState {
+    fn default() -> Self {
+        SignalServerState {
+            sockets: Arc::new(Mutex::new(HashMap::new())),
+        }
     }
 }
 
 #[actix_rt::main]
 async fn main() -> std::io::Result<()> {
-    let state = web::Data::new(Mutex::new(SignalServerState::new()));
+    let state = web::Data::new(Mutex::new(SignalServerState::default()));
     HttpServer::new(move || {
         App::new()
             .register_data(state.clone())
             .wrap(middleware::Logger::default())
-            .service(web::resource("/signal/{share_id}").to(index))
+            .service(web::resource("/signal").to(index))
     })
     .bind("0.0.0.0:8080")?
     .start()
