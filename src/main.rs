@@ -1,11 +1,12 @@
-use actix::prelude::{
-    Actor, ActorContext, Addr, AsyncContext, Handler, Message, StreamHandler,
-};
+use actix::prelude::{Actor, ActorContext, Addr, AsyncContext, Handler, StreamHandler};
 use actix_web::{middleware, web, App, HttpRequest, HttpServer, Responder};
 use actix_web_actors::ws;
-use serde::{Deserialize, Serialize};
+use signal::Signal;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use uuid::Uuid;
+
+mod signal;
 
 type SignalServerStateData = web::Data<Mutex<SignalServerState>>;
 
@@ -15,8 +16,12 @@ async fn index(
     stream: web::Payload,
 ) -> impl Responder {
     let mut resolved_server_state = state.lock().unwrap();
+    let user_name = Uuid::new_v4();
     ws::start(
-        SignalSocket::new("asdf".to_owned(), &mut resolved_server_state),
+        SignalSocket::new(
+            user_name.to_hyphenated().to_string(),
+            &mut resolved_server_state,
+        ),
         &request,
         stream,
     )
@@ -44,6 +49,7 @@ impl Actor for SignalSocket {
     fn started(&mut self, context: &mut Self::Context) {
         let mut resolved_another_sockets = self.another_sockets.lock().unwrap();
         resolved_another_sockets.insert(self.user_name.clone(), context.address());
+        context.text(Signal::assign(self.user_name.clone()).to_string());
         println!("Signal Socket Opened")
     }
 
@@ -74,7 +80,7 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for SignalSocket {
 }
 
 #[derive(Debug)]
-enum MessageSendError {
+pub enum MessageSendError {
     ParseError(serde_json::Error),
 }
 
@@ -112,35 +118,6 @@ impl Handler<Arc<Signal>> for SignalSocket {
         context.text(serde_json::to_string(resolved_message)?);
         Ok(())
     }
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-enum Signal {
-    Offer(SessionDescriptionMessage),
-    Answer(SessionDescriptionMessage),
-    NewIceCandidate(IceCandidate),
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-struct SessionDescriptionMessage {
-    target: String,
-    name: String,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-struct IceCandidate {
-    targe: String,
-    candidate: String,
-}
-
-impl Signal {
-    pub fn parse_json(s: &str) -> serde_json::Result<Self> {
-        serde_json::from_str(s)
-    }
-}
-
-impl Message for Signal {
-    type Result = Result<(), MessageSendError>;
 }
 
 struct SignalServerState {
