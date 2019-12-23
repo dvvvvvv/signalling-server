@@ -15,14 +15,14 @@ pub enum Signal {
 
 #[derive(Clone)]
 pub struct SessionDescriptionMessage {
-    target: String,
-    name: String,
+    pub target: String,
+    pub name: String,
     sdp: String,
 }
 
 #[derive(Clone)]
 pub struct IceCandidate {
-    target: String,
+    pub target: String,
     candidate: String,
 }
 

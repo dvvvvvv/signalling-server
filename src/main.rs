@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
 mod signal;
+mod signal_router;
 
 type SignalServerStateData = web::Data<Mutex<SignalServerState>>;
 
@@ -106,12 +107,12 @@ impl std::error::Error for MessageSendError {
     }
 }
 
-impl Handler<Arc<Signal>> for SignalSocket {
+impl Handler<Signal> for SignalSocket {
     type Result = Result<(), MessageSendError>;
 
     fn handle(
         &mut self,
-        message: Arc<Signal>,
+        message: Signal,
         context: &mut Self::Context,
     ) -> Result<(), MessageSendError> {
         let resolved_message: &Signal = &message;
