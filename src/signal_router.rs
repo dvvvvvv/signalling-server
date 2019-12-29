@@ -1,8 +1,12 @@
 use super::signal::Signal;
 use super::SignalSocket;
-use actix::prelude::{Actor, Addr, Context, Handler, Message};
+use actix::prelude::{Actor, Addr, Context, Handler, Message, ResponseActFuture};
+use actix::fut::wrap_future;
+use std::future::Future;
 use futures::{FutureExt, TryFuture, TryFutureExt};
 use std::collections::HashMap;
+
+use super::MessageSendError;
 
 #[derive(Default)]
 pub struct SignalRouter {
@@ -17,38 +21,35 @@ impl SignalRouter {
     fn target(&self, target_name: &str) -> Option<&Addr<SignalSocket>> {
         self.sockets.get(target_name)
     }
-}
 
-trait RoutingTarget<T: Message, R> {
-    fn route_message(&self, message: T) -> R;
-}
-impl RoutingTarget<Signal, <Signal as Message>::Result> for Option<&Addr<SignalSocket>> {
-    fn route_message(&self, message: Signal) -> <Signal as Message>::Result {
-        //TODO: error propagation, synchronous... almost everything is horrible. must be fixed.
-        if let Some(existing_self) = self {
-            existing_self.do_send(message);
-            Ok(())
-        } else {
-            Ok(())
-        }
+    fn wrap_future <F> (future: F) -> ResponseActFuture<Self, Result<(), MessageSendError>> 
+    where F: Future<Output=Result<(), MessageSendError>> + 'static {
+        Box::new(wrap_future(future))
     }
 }
 
 impl Handler<SignalMessage> for SignalRouter {
-    type Result = <SignalMessage as Message>::Result;
+    type Result = ResponseActFuture<Self, Result<(), MessageSendError>>;
 
     fn handle(&mut self, message: SignalMessage, context: &mut Self::Context) -> Self::Result {
-        //TODO: this match is horrible to.
         match &message.0 {
-            Signal::Answer(signal) | Signal::Offer(signal) => self
-                .target(&signal.target)
-                .route_message(message.0)
-                .map_err(drop),
-            Signal::NewIceCandidate(ice_candidate) => self
-                .target(&ice_candidate.target)
-                .route_message(message.0)
-                .map_err(drop),
-            _ => Ok(()), //do nothing
+            Signal::Answer(signal) | Signal::Offer(signal) => {
+                if let Some(target_socket) = self.target(&signal.target) {
+                    let message_transfer_future = target_socket.send(message.0).unwrap_or_else(|mailbox_err| Err(mailbox_err.into()));
+                    Self::wrap_future(message_transfer_future)
+                } else {
+                    Self::wrap_future(futures::future::err(MessageSendError::TargetNotFound(signal.target)))
+                }
+            },
+            Signal::NewIceCandidate(ice_candidate) =>  {
+                if let Some(target_socket) = self.target(&ice_candidate.target) {
+                    let message_transfer_future = target_socket.send(message.0).unwrap_or_else(|mailbox_err| Err(mailbox_err.into()));
+                    Self::wrap_future(message_transfer_future)
+                } else {
+                    Self::wrap_future(futures::future::err(MessageSendError::TargetNotFound(ice_candidate.target)))
+                }
+            }
+            _ => Self::wrap_future(futures::future::ok(())), //do nothing
         }
     }
 }
@@ -75,7 +76,7 @@ impl Handler<ExitMessage> for SignalRouter {
 pub struct SignalMessage(Signal);
 
 impl Message for SignalMessage {
-    type Result = Result<(), ()>;
+    type Result = Result<(), MessageSendError>;
 }
 
 impl From<Signal> for SignalMessage {
