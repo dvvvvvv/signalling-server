@@ -1,6 +1,8 @@
-use actix::prelude::{Actor, ActorContext, Addr, AsyncContext, Handler, StreamHandler};
+use actix::prelude::{Actor, ActorContext, Addr, AsyncContext, Handler, StreamHandler, ResponseActFuture};
+use actix::fut::wrap_future;
 use actix_web::{middleware, web, App, HttpRequest, HttpServer, Responder};
 use actix_web_actors::ws;
+use std::future::Future;
 use futures::executor::block_on;
 use signal::Signal;
 use uuid::Uuid;
@@ -46,7 +48,7 @@ impl SignalSocket {
 
 impl SignalSocket {
     fn handle_signal_message(&self, signal_message: Signal) {
-        self.signal_router.do_send(SignalMessage::from(signal_message));
+        self.signal_router.send(SignalMessage::from(signal_message))
     }
 }
 
@@ -130,16 +132,14 @@ impl std::error::Error for MessageSendError {
 }
 
 impl Handler<Signal> for SignalSocket {
-    type Result = Result<(), MessageSendError>;
+    type Result = Result::<(),MessageSendError>;
 
     fn handle(
         &mut self,
         message: Signal,
         context: &mut Self::Context,
-    ) -> Result<(), MessageSendError> {
-        let resolved_message: &Signal = &message;
-        context.text(serde_json::to_string(resolved_message)?);
-        Ok(())
+    ) -> Self::Result {
+        Ok(context.text(serde_json::to_string(&message)?))
     }
 }
 
