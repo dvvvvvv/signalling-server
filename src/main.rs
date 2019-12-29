@@ -1,8 +1,6 @@
-use actix::prelude::{Actor, ActorContext, Addr, AsyncContext, Handler, StreamHandler, ResponseActFuture};
-use actix::fut::wrap_future;
+use actix::prelude::{Actor, ActorContext, Addr, AsyncContext, Handler, StreamHandler};
 use actix_web::{middleware, web, App, HttpRequest, HttpServer, Responder};
 use actix_web_actors::ws;
-use std::future::Future;
 use futures::executor::block_on;
 use signal::Signal;
 use uuid::Uuid;
@@ -37,18 +35,29 @@ pub struct SignalSocket {
 
 impl SignalSocket {
     fn new(user_name: String, signal_router: &Addr<SignalRouter>) -> Self {
-        let new_signal_socket = SignalSocket {
+        SignalSocket {
             user_name,
             signal_router: signal_router.clone(),
-        };
-
-        return new_signal_socket;
+        }
     }
 }
 
 impl SignalSocket {
-    fn handle_signal_message(&self, signal_message: Signal) {
-        self.signal_router.send(SignalMessage::from(signal_message))
+    async fn handle_signal_message(&self, signal_message: Signal, context: &mut ws::WebsocketContext<Self>) {
+        let signal_routing_result = self.signal_router.send(SignalMessage::from(signal_message))
+            .await
+            .unwrap_or_else(|mailbox_error| Err(into_service_releated_error(mailbox_error)));
+        match signal_routing_result {
+            Ok(_) => {},//do nothing
+            Err(err) => context.text(&serde_json::to_string(&ErrorMessage::from(err)).unwrap()),
+        }
+    }
+}
+
+fn into_service_releated_error(mailbox_error: actix::MailboxError) -> MessageSendError {
+    match mailbox_error {
+        actix::MailboxError::Closed => MessageSendError::ServiceUnavailable,
+        actix::MailboxError::Timeout => MessageSendError::ServiceTimeout,
     }
 }
 
@@ -60,7 +69,7 @@ impl Actor for SignalSocket {
             .signal_router
             .send(JoinMessage::new(self.user_name.clone(), context.address()));
 
-        if let Ok(_) = block_on(joining_router_fut) {
+        if block_on(joining_router_fut).is_ok() {
             context.text(Signal::assign(self.user_name.clone()).to_string());
             println!("Signal Socket Opened")
         } else {
@@ -72,7 +81,7 @@ impl Actor for SignalSocket {
         let exiting_router_fut = self.signal_router
             .send(ExitMessage::from(self.user_name.clone()));
 
-        if let Ok(_) = block_on(exiting_router_fut) {
+        if block_on(exiting_router_fut).is_ok() {
             println!("Signal Socket Closed")
         } else {
             eprintln!("couldn't exit from router. user name: {}", self.user_name)
@@ -92,14 +101,51 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for SignalSocket {
                 context.stop();
             }
             Ok(ws::Message::Text(text_message)) => if let Ok(signal) = serde_json::from_str(&text_message) {
-                self.handle_signal_message(signal)
+                block_on(self.handle_signal_message(signal, context))
             } else {
                 context.text("couldn't parse your message")
             },
             Ok(_) => {
-                println!("some messaged received.");
+                println!("some message received.");
             }
             Err(error) => eprintln!("error occurred during receive message: {}", error),
+        }
+    }
+}
+
+#[derive(serde::Serialize)]
+struct ErrorMessage {
+    r#type: &'static str,
+    message: String,
+}
+
+impl From<MessageSendError> for ErrorMessage {
+    fn from(message_send_error:MessageSendError) -> Self {
+        match message_send_error {
+            MessageSendError::ParseError(parse_error) => ErrorMessage {
+                r#type: "parse error",
+                message: format!("{}", parse_error),
+            },
+            MessageSendError::ConnectionClosed => ErrorMessage {
+                r#type: "connection closed",
+                message: "target user's connection is closed".to_owned(),
+            },
+            MessageSendError::ConnectionTimeout => ErrorMessage {
+                r#type: "timeout",
+                message: "timeout occurres during send message to target user".to_owned(),
+            },
+            MessageSendError::TargetNotFound(target_user_name) => ErrorMessage {
+                r#type: "target user not found",
+                message: format!("user {} is not in connection", target_user_name)
+            },
+            MessageSendError::ServiceUnavailable => ErrorMessage {
+                r#type: "service unavailable",
+                message: "service is unavailable, please contact to service provider".to_owned(),
+            },
+            MessageSendError::ServiceTimeout => ErrorMessage {
+                r#type: "service timeout",
+                message: "service is busy. try after".to_owned(),
+            }
         }
     }
 }
@@ -110,20 +156,13 @@ pub enum MessageSendError {
     ConnectionClosed,
     ConnectionTimeout,
     TargetNotFound(String),
+    ServiceUnavailable,
+    ServiceTimeout,
 }
 
 impl From<serde_json::Error> for MessageSendError {
     fn from(err: serde_json::Error) -> MessageSendError {
         Self::ParseError(err)
-    }
-}
-
-impl From<actix::MailboxError> for MessageSendError {
-    fn from(err: actix::MailboxError) -> Self {
-        match err {
-            actix::MailboxError::Closed => Self::ConnectionClosed,
-            actix::MailboxError::Timeout => Self::ConnectionTimeout,
-        }
     }
 }
 
@@ -134,6 +173,8 @@ impl std::fmt::Display for MessageSendError {
             Self::ConnectionClosed => write!(formatter, "ConnectionClosed"),
             Self::ConnectionTimeout => write!(formatter, "ConnectionTimeout"),
             Self::TargetNotFound(target_user_name) => write!(formatter, "TargetNotFound(target_user_name: {})", target_user_name),
+            Self::ServiceUnavailable => write!(formatter, "ServiceUnavailable"),
+            Self::ServiceTimeout => write!(formatter, "ServiceTemporaryUnavailable")
         }
     }
 }
@@ -142,9 +183,7 @@ impl std::error::Error for MessageSendError {
     fn cause(&self) -> Option<&dyn std::error::Error> {
         match self {
             Self::ParseError(err) => Some(err),
-            Self::ConnectionClosed => None,
-            Self::ConnectionTimeout => None,
-            Self::TargetNotFound(_) => None,
+            _ => None,
         }
     }
 }
@@ -157,7 +196,8 @@ impl Handler<Signal> for SignalSocket {
         message: Signal,
         context: &mut Self::Context,
     ) -> Self::Result {
-        Ok(context.text(serde_json::to_string(&message)?))
+        context.text(serde_json::to_string(&message)?);
+        Ok(())
     }
 }
 
