@@ -1,4 +1,4 @@
-use super::MessageSendError;
+use super::Error;
 use actix::Message;
 use serde_json;
 
@@ -37,7 +37,7 @@ impl Signal {
 }
 
 impl Message for Signal {
-    type Result = Result<(), MessageSendError>;
+    type Result = Result<(), Error>;
 }
 
 impl ToString for Signal {

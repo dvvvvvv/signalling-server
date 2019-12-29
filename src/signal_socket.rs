@@ -2,7 +2,7 @@ use actix::prelude::{Actor, StreamHandler, Addr, Handler, AsyncContext, ActorCon
 use actix_web_actors::ws;
 use futures::executor::block_on;
 
-use super::{SignalRouter, SignalMessage, ErrorMessage, MessageSendError, JoinMessage,Signal,ExitMessage};
+use super::{SignalRouter, SignalMessage, ErrorMessage, Error, JoinMessage,Signal,ExitMessage};
 
 pub struct SignalSocket {
     user_name: String,
@@ -28,10 +28,10 @@ impl SignalSocket {
     }
 }
 
-fn into_service_releated_error(mailbox_error: actix::MailboxError) -> MessageSendError {
+fn into_service_releated_error(mailbox_error: actix::MailboxError) -> Error {
     match mailbox_error {
-        actix::MailboxError::Closed => MessageSendError::ServiceUnavailable,
-        actix::MailboxError::Timeout => MessageSendError::ServiceTimeout,
+        actix::MailboxError::Closed => Error::ServiceUnavailable,
+        actix::MailboxError::Timeout => Error::ServiceTimeout,
     }
 }
 
@@ -88,7 +88,7 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for SignalSocket {
 }
 
 impl Handler<Signal> for SignalSocket {
-    type Result = Result::<(),MessageSendError>;
+    type Result = Result::<(),Error>;
 
     fn handle(
         &mut self,

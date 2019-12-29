@@ -6,7 +6,7 @@ use std::future::Future;
 use futures::TryFutureExt;
 use std::collections::HashMap;
 
-use super::MessageSendError;
+use super::Error;
 
 #[derive(Default)]
 pub struct SignalRouter {
@@ -22,14 +22,14 @@ impl SignalRouter {
         self.sockets.get(target_name)
     }
 
-    fn wrap_future <F> (future: F) -> ResponseActFuture<Self, Result<(), MessageSendError>> 
-    where F: Future<Output=Result<(), MessageSendError>> + 'static {
+    fn wrap_future <F> (future: F) -> ResponseActFuture<Self, Result<(), Error>> 
+    where F: Future<Output=Result<(), Error>> + 'static {
         Box::new(wrap_future(future))
     }
 }
 
 impl Handler<SignalMessage> for SignalRouter {
-    type Result = ResponseActFuture<Self, Result<(), MessageSendError>>;
+    type Result = ResponseActFuture<Self, Result<(), Error>>;
 
     fn handle(&mut self, message: SignalMessage, _: &mut Self::Context) -> Self::Result {
         match &message.0 {
@@ -38,7 +38,7 @@ impl Handler<SignalMessage> for SignalRouter {
                     let message_transfer_future = target_socket.send(message.0).unwrap_or_else(|mailbox_err| Err(into_target_related_error(mailbox_err)));
                     Self::wrap_future(message_transfer_future)
                 } else {
-                    Self::wrap_future(futures::future::err(MessageSendError::TargetNotFound(signal.target.clone())))
+                    Self::wrap_future(futures::future::err(Error::TargetNotFound(signal.target.clone())))
                 }
             },
             Signal::NewIceCandidate(ice_candidate) =>  {
@@ -46,7 +46,7 @@ impl Handler<SignalMessage> for SignalRouter {
                     let message_transfer_future = target_socket.send(message.0).unwrap_or_else(|mailbox_err| Err(into_target_related_error(mailbox_err)));
                     Self::wrap_future(message_transfer_future)
                 } else {
-                    Self::wrap_future(futures::future::err(MessageSendError::TargetNotFound(ice_candidate.target.clone())))
+                    Self::wrap_future(futures::future::err(Error::TargetNotFound(ice_candidate.target.clone())))
                 }
             }
             _ => Self::wrap_future(futures::future::ok(())), //do nothing
@@ -54,10 +54,10 @@ impl Handler<SignalMessage> for SignalRouter {
     }
 }
 
-fn into_target_related_error(mailbox_error: actix::MailboxError) -> MessageSendError {
+fn into_target_related_error(mailbox_error: actix::MailboxError) -> Error {
     match mailbox_error {
-        actix::MailboxError::Closed => MessageSendError::ConnectionClosed,
-        actix::MailboxError::Timeout => MessageSendError::ConnectionTimeout,
+        actix::MailboxError::Closed => Error::ConnectionClosed,
+        actix::MailboxError::Timeout => Error::ConnectionTimeout,
     }
 }
 
@@ -83,7 +83,7 @@ impl Handler<ExitMessage> for SignalRouter {
 pub struct SignalMessage(Signal);
 
 impl Message for SignalMessage {
-    type Result = Result<(), MessageSendError>;
+    type Result = Result<(), Error>;
 }
 
 impl From<Signal> for SignalMessage {
