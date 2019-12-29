@@ -37,7 +37,7 @@ impl<'de> Visitor<'de> for SignalVisitor {
             }
         }
 
-        return Err(M::Error::missing_field("type"));
+        Err(M::Error::missing_field("type"))
     }
 }
 
@@ -110,6 +110,6 @@ impl<'de> Visitor<'de> for AssignedNameVisitor {
             }
         }
 
-        return Err(M::Error::missing_field("name"));
+        Err(M::Error::missing_field("name"))
     }
 }
