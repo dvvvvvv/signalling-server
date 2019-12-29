@@ -30,10 +30,6 @@ impl Signal {
     pub fn assign(user_name: String) -> Signal {
         Signal::Assign(user_name)
     }
-
-    pub fn parse_json(s: &str) -> serde_json::Result<Self> {
-        serde_json::from_str(s)
-    }
 }
 
 impl Message for Signal {

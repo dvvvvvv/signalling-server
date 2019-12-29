@@ -2,7 +2,7 @@ use actix::prelude::{Actor, StreamHandler, Addr, Handler, AsyncContext, ActorCon
 use actix_web_actors::ws;
 use futures::executor::block_on;
 
-use super::{SignalRouter, SignalMessage, ErrorMessage, Error, JoinMessage,Signal,ExitMessage};
+use super::{SignalRouter, SignalMessage, Error, JoinMessage,Signal,ExitMessage};
 
 pub struct SignalSocket {
     user_name: String,
@@ -97,6 +97,43 @@ impl Handler<Signal> for SignalSocket {
     ) -> Self::Result {
         context.text(serde_json::to_string(&message)?);
         Ok(())
+    }
+}
+
+#[derive(serde::Serialize)]
+struct ErrorMessage {
+    r#type: &'static str,
+    message: String,
+}
+
+impl From<Error> for ErrorMessage {
+    fn from(message_send_error:Error) -> Self {
+        match message_send_error {
+            Error::ParseError(parse_error) => ErrorMessage {
+                r#type: "parse error",
+                message: format!("{}", parse_error),
+            },
+            Error::ConnectionClosed => ErrorMessage {
+                r#type: "connection closed",
+                message: "target user's connection is closed".to_owned(),
+            },
+            Error::ConnectionTimeout => ErrorMessage {
+                r#type: "timeout",
+                message: "timeout occurres during send message to target user".to_owned(),
+            },
+            Error::TargetNotFound(target_user_name) => ErrorMessage {
+                r#type: "target user not found",
+                message: format!("user {} is not in connection", target_user_name)
+            },
+            Error::ServiceUnavailable => ErrorMessage {
+                r#type: "service unavailable",
+                message: "service is unavailable, please contact to service provider".to_owned(),
+            },
+            Error::ServiceTimeout => ErrorMessage {
+                r#type: "service timeout",
+                message: "service is busy. try after".to_owned(),
+            }
+        }
     }
 }
 
