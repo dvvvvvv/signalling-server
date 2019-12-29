@@ -160,11 +160,11 @@ async fn main() -> std::io::Result<()> {
     let state = web::Data::new(SignalServerState::new(signal_router_addr));
     HttpServer::new(move || {
         App::new()
-            .register_data(state.clone())
+            .data(state.clone())
             .wrap(middleware::Logger::default())
             .service(web::resource("/signal").to(index))
     })
     .bind("0.0.0.0:8080")?
-    .start()
+    .run()
     .await
 }
