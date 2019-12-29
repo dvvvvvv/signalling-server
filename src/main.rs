@@ -107,18 +107,33 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for SignalSocket {
 #[derive(Debug)]
 pub enum MessageSendError {
     ParseError(serde_json::Error),
+    ConnectionClosed,
+    ConnectionTimeout,
+    TargetNotFound(String),
 }
 
 impl From<serde_json::Error> for MessageSendError {
     fn from(err: serde_json::Error) -> MessageSendError {
-        MessageSendError::ParseError(err)
+        Self::ParseError(err)
+    }
+}
+
+impl From<actix::MailboxError> for MessageSendError {
+    fn from(err: actix::MailboxError) -> Self {
+        match err {
+            actix::MailboxError::Closed => Self::ConnectionClosed,
+            actix::MailboxError::Timeout => Self::ConnectionTimeout,
+        }
     }
 }
 
 impl std::fmt::Display for MessageSendError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            MessageSendError::ParseError(err) => write!(formatter, "{}", err),
+            Self::ParseError(err) => write!(formatter, "ParseError({})", err),
+            Self::ConnectionClosed => write!(formatter, "ConnectionClosed"),
+            Self::ConnectionTimeout => write!(formatter, "ConnectionTimeout"),
+            Self::TargetNotFound(target_user_name) => write!(formatter, "TargetNotFound(target_user_name: {})", target_user_name),
         }
     }
 }
@@ -126,7 +141,10 @@ impl std::fmt::Display for MessageSendError {
 impl std::error::Error for MessageSendError {
     fn cause(&self) -> Option<&dyn std::error::Error> {
         match self {
-            MessageSendError::ParseError(err) => Some(err),
+            Self::ParseError(err) => Some(err),
+            Self::ConnectionClosed => None,
+            Self::ConnectionTimeout => None,
+            Self::TargetNotFound(_) => None,
         }
     }
 }
