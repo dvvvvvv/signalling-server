@@ -4,14 +4,14 @@ use actix_web_actors::ws;
 use signal::Signal;
 use uuid::Uuid;
 
-use signal_router::{ExitMessage, JoinMessage, SignalRouter, SignalMessage};
-use signal_socket::SignalSocket;
 use error::Error;
+use signal_router::{ExitMessage, JoinMessage, SignalMessage, SignalRouter};
+use signal_socket::SignalSocket;
 
-mod signal;
-mod signal_socket;
-mod signal_router;
 mod error;
+mod signal;
+mod signal_router;
+mod signal_socket;
 
 type SignalServerStateData = web::Data<SignalServerState>;
 
@@ -32,10 +32,7 @@ async fn signal(
 ) -> impl Responder {
     let user_name = Uuid::new_v4();
     ws::start(
-        SignalSocket::new(
-            user_name.to_hyphenated().to_string(),
-            &state.signal_router
-        ),
+        SignalSocket::new(user_name.to_hyphenated().to_string(), &state.signal_router),
         &request,
         stream,
     )

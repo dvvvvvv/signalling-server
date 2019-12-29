@@ -1,8 +1,8 @@
-use actix::prelude::{Actor, StreamHandler, Addr, Handler, AsyncContext, ActorContext};
+use actix::prelude::{Actor, ActorContext, Addr, AsyncContext, Handler, StreamHandler};
 use actix_web_actors::ws;
 use futures::executor::block_on;
 
-use super::{SignalRouter, SignalMessage, Error, JoinMessage,Signal,ExitMessage};
+use super::{Error, ExitMessage, JoinMessage, Signal, SignalMessage, SignalRouter};
 
 pub struct SignalSocket {
     user_name: String,
@@ -17,12 +17,18 @@ impl SignalSocket {
         }
     }
 
-    async fn handle_signal_message(&self, signal_message: Signal, context: &mut ws::WebsocketContext<Self>) {
-        let signal_routing_result = self.signal_router.send(SignalMessage::from(signal_message))
+    async fn handle_signal_message(
+        &self,
+        signal_message: Signal,
+        context: &mut ws::WebsocketContext<Self>,
+    ) {
+        let signal_routing_result = self
+            .signal_router
+            .send(SignalMessage::from(signal_message))
             .await
             .unwrap_or_else(|mailbox_error| Err(into_service_releated_error(mailbox_error)));
         match signal_routing_result {
-            Ok(_) => {},//do nothing
+            Ok(_) => {} //do nothing
             Err(err) => context.text(&serde_json::to_string(&ErrorMessage::from(err)).unwrap()),
         }
     }
@@ -52,7 +58,8 @@ impl Actor for SignalSocket {
     }
 
     fn stopped(&mut self, _: &mut Self::Context) {
-        let exiting_router_fut = self.signal_router
+        let exiting_router_fut = self
+            .signal_router
             .send(ExitMessage::from(self.user_name.clone()));
 
         if block_on(exiting_router_fut).is_ok() {
@@ -74,11 +81,13 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for SignalSocket {
                 println!("close request received. closing.");
                 context.stop();
             }
-            Ok(ws::Message::Text(text_message)) => if let Ok(signal) = serde_json::from_str(&text_message) {
-                block_on(self.handle_signal_message(signal, context))
-            } else {
-                context.text("couldn't parse your message")
-            },
+            Ok(ws::Message::Text(text_message)) => {
+                if let Ok(signal) = serde_json::from_str(&text_message) {
+                    block_on(self.handle_signal_message(signal, context))
+                } else {
+                    context.text("couldn't parse your message")
+                }
+            }
             Ok(_) => {
                 println!("some message received.");
             }
@@ -88,13 +97,9 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for SignalSocket {
 }
 
 impl Handler<Signal> for SignalSocket {
-    type Result = Result::<(),Error>;
+    type Result = Result<(), Error>;
 
-    fn handle(
-        &mut self,
-        message: Signal,
-        context: &mut Self::Context,
-    ) -> Self::Result {
+    fn handle(&mut self, message: Signal, context: &mut Self::Context) -> Self::Result {
         context.text(serde_json::to_string(&message)?);
         Ok(())
     }
@@ -107,7 +112,7 @@ struct ErrorMessage {
 }
 
 impl From<Error> for ErrorMessage {
-    fn from(message_send_error:Error) -> Self {
+    fn from(message_send_error: Error) -> Self {
         match message_send_error {
             Error::ParseError(parse_error) => ErrorMessage {
                 r#type: "parse error",
@@ -123,7 +128,7 @@ impl From<Error> for ErrorMessage {
             },
             Error::TargetNotFound(target_user_name) => ErrorMessage {
                 r#type: "target user not found",
-                message: format!("user {} is not in connection", target_user_name)
+                message: format!("user {} is not in connection", target_user_name),
             },
             Error::ServiceUnavailable => ErrorMessage {
                 r#type: "service unavailable",
@@ -132,8 +137,7 @@ impl From<Error> for ErrorMessage {
             Error::ServiceTimeout => ErrorMessage {
                 r#type: "service timeout",
                 message: "service is busy. try after".to_owned(),
-            }
+            },
         }
     }
 }
-

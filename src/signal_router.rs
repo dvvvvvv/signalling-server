@@ -1,10 +1,10 @@
 use super::signal::Signal;
 use super::SignalSocket;
-use actix::prelude::{Actor, Addr, Context, Handler, Message, ResponseActFuture};
 use actix::fut::wrap_future;
-use std::future::Future;
+use actix::prelude::{Actor, Addr, Context, Handler, Message, ResponseActFuture};
 use futures::TryFutureExt;
 use std::collections::HashMap;
+use std::future::Future;
 
 use super::Error;
 
@@ -22,8 +22,10 @@ impl SignalRouter {
         self.sockets.get(target_name)
     }
 
-    fn wrap_future <F> (future: F) -> ResponseActFuture<Self, Result<(), Error>> 
-    where F: Future<Output=Result<(), Error>> + 'static {
+    fn wrap_future<F>(future: F) -> ResponseActFuture<Self, Result<(), Error>>
+    where
+        F: Future<Output = Result<(), Error>> + 'static,
+    {
         Box::new(wrap_future(future))
     }
 }
@@ -35,18 +37,26 @@ impl Handler<SignalMessage> for SignalRouter {
         match &message.0 {
             Signal::Answer(signal) | Signal::Offer(signal) => {
                 if let Some(target_socket) = self.target(&signal.target) {
-                    let message_transfer_future = target_socket.send(message.0).unwrap_or_else(|mailbox_err| Err(into_target_related_error(mailbox_err)));
+                    let message_transfer_future = target_socket
+                        .send(message.0)
+                        .unwrap_or_else(|mailbox_err| Err(into_target_related_error(mailbox_err)));
                     Self::wrap_future(message_transfer_future)
                 } else {
-                    Self::wrap_future(futures::future::err(Error::TargetNotFound(signal.target.clone())))
+                    Self::wrap_future(futures::future::err(Error::TargetNotFound(
+                        signal.target.clone(),
+                    )))
                 }
-            },
-            Signal::NewIceCandidate(ice_candidate) =>  {
+            }
+            Signal::NewIceCandidate(ice_candidate) => {
                 if let Some(target_socket) = self.target(&ice_candidate.target) {
-                    let message_transfer_future = target_socket.send(message.0).unwrap_or_else(|mailbox_err| Err(into_target_related_error(mailbox_err)));
+                    let message_transfer_future = target_socket
+                        .send(message.0)
+                        .unwrap_or_else(|mailbox_err| Err(into_target_related_error(mailbox_err)));
                     Self::wrap_future(message_transfer_future)
                 } else {
-                    Self::wrap_future(futures::future::err(Error::TargetNotFound(ice_candidate.target.clone())))
+                    Self::wrap_future(futures::future::err(Error::TargetNotFound(
+                        ice_candidate.target.clone(),
+                    )))
                 }
             }
             _ => Self::wrap_future(futures::future::ok(())), //do nothing

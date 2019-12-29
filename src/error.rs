@@ -1,4 +1,3 @@
-
 #[derive(Debug)]
 pub enum Error {
     ParseError(serde_json::Error),
@@ -21,9 +20,13 @@ impl std::fmt::Display for Error {
             Self::ParseError(err) => write!(formatter, "ParseError({})", err),
             Self::ConnectionClosed => write!(formatter, "ConnectionClosed"),
             Self::ConnectionTimeout => write!(formatter, "ConnectionTimeout"),
-            Self::TargetNotFound(target_user_name) => write!(formatter, "TargetNotFound(target_user_name: {})", target_user_name),
+            Self::TargetNotFound(target_user_name) => write!(
+                formatter,
+                "TargetNotFound(target_user_name: {})",
+                target_user_name
+            ),
             Self::ServiceUnavailable => write!(formatter, "ServiceUnavailable"),
-            Self::ServiceTimeout => write!(formatter, "ServiceTemporaryUnavailable")
+            Self::ServiceTimeout => write!(formatter, "ServiceTemporaryUnavailable"),
         }
     }
 }
@@ -36,4 +39,3 @@ impl std::error::Error for Error {
         }
     }
 }
-
