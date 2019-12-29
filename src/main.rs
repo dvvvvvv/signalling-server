@@ -1,46 +1,52 @@
 use actix::prelude::{Actor, ActorContext, Addr, AsyncContext, Handler, StreamHandler};
 use actix_web::{middleware, web, App, HttpRequest, HttpServer, Responder};
 use actix_web_actors::ws;
+use futures::executor::block_on;
 use signal::Signal;
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
 use uuid::Uuid;
+
+use signal_router::{ExitMessage, JoinMessage, SignalRouter, SignalMessage};
 
 mod signal;
 mod signal_router;
 
-type SignalServerStateData = web::Data<Mutex<SignalServerState>>;
+type SignalServerStateData = web::Data<SignalServerState>;
 
 async fn index(
     state: SignalServerStateData,
     request: HttpRequest,
     stream: web::Payload,
 ) -> impl Responder {
-    let mut resolved_server_state = state.lock().unwrap();
     let user_name = Uuid::new_v4();
     ws::start(
         SignalSocket::new(
             user_name.to_hyphenated().to_string(),
-            &mut resolved_server_state,
+            &state.signal_router
         ),
         &request,
         stream,
     )
 }
 
-struct SignalSocket {
+pub struct SignalSocket {
     user_name: String,
-    another_sockets: Arc<Mutex<HashMap<String, Addr<SignalSocket>>>>,
+    signal_router: Addr<SignalRouter>,
 }
 
 impl SignalSocket {
-    fn new(user_name: String, server_state: &mut SignalServerState) -> Self {
+    fn new(user_name: String, signal_router: &Addr<SignalRouter>) -> Self {
         let new_signal_socket = SignalSocket {
             user_name,
-            another_sockets: server_state.sockets.clone(),
+            signal_router: signal_router.clone(),
         };
 
         return new_signal_socket;
+    }
+}
+
+impl SignalSocket {
+    fn handle_signal_message(&self, signal_message: Signal) {
+        self.signal_router.do_send(SignalMessage::from(signal_message));
     }
 }
 
@@ -48,16 +54,27 @@ impl Actor for SignalSocket {
     type Context = ws::WebsocketContext<Self>;
 
     fn started(&mut self, context: &mut Self::Context) {
-        let mut resolved_another_sockets = self.another_sockets.lock().unwrap();
-        resolved_another_sockets.insert(self.user_name.clone(), context.address());
-        context.text(Signal::assign(self.user_name.clone()).to_string());
-        println!("Signal Socket Opened")
+        let joining_router_fut = self
+            .signal_router
+            .send(JoinMessage::new(self.user_name.clone(), context.address()));
+
+        if let Ok(_) = block_on(joining_router_fut) {
+            context.text(Signal::assign(self.user_name.clone()).to_string());
+            println!("Signal Socket Opened")
+        } else {
+            context.stop();
+        }
     }
 
     fn stopped(&mut self, _: &mut Self::Context) {
-        let mut resolved_another_sockets = self.another_sockets.lock().unwrap();
-        resolved_another_sockets.remove(&self.user_name);
-        println!("Signal Socket Closed")
+        let exiting_router_fut = self.signal_router
+            .send(ExitMessage::from(self.user_name.clone()));
+
+        if let Ok(_) = block_on(exiting_router_fut) {
+            println!("Signal Socket Closed")
+        } else {
+            eprintln!("couldn't exit from router. user name: {}", self.user_name)
+        }
     }
 }
 
@@ -72,6 +89,11 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for SignalSocket {
                 println!("close request received. closing.");
                 context.stop();
             }
+            Ok(ws::Message::Text(text_message)) => if let Ok(signal) = serde_json::from_str(&text_message) {
+                self.handle_signal_message(signal)
+            } else {
+                context.text("couldn't parse your message")
+            },
             Ok(_) => {
                 println!("some messaged received.");
             }
@@ -122,20 +144,20 @@ impl Handler<Signal> for SignalSocket {
 }
 
 struct SignalServerState {
-    sockets: Arc<Mutex<HashMap<String, Addr<SignalSocket>>>>,
+    signal_router: Addr<SignalRouter>,
 }
 
-impl Default for SignalServerState {
-    fn default() -> Self {
-        SignalServerState {
-            sockets: Arc::new(Mutex::new(HashMap::new())),
-        }
+impl SignalServerState {
+    fn new(signal_router: Addr<SignalRouter>) -> Self {
+        SignalServerState { signal_router }
     }
 }
 
 #[actix_rt::main]
 async fn main() -> std::io::Result<()> {
-    let state = web::Data::new(Mutex::new(SignalServerState::default()));
+    let signal_router = SignalRouter::default();
+    let signal_router_addr = signal_router.start();
+    let state = web::Data::new(SignalServerState::new(signal_router_addr));
     HttpServer::new(move || {
         App::new()
             .register_data(state.clone())

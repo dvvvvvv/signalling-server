@@ -1,7 +1,7 @@
+use serde::de::{Error, MapAccess, Unexpected, Visitor};
 use serde::{Deserialize, Deserializer};
-use serde::de::{Error, MapAccess, Visitor, Unexpected};
 
-use super::{Signal, IceCandidate, SessionDescriptionMessage};
+use super::{IceCandidate, SessionDescriptionMessage, Signal};
 
 impl<'de> Deserialize<'de> for Signal {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
@@ -23,10 +23,17 @@ impl<'de> Visitor<'de> for SignalVisitor {
                 return match value {
                     "offer" => Ok(Signal::Offer(SessionDescriptionVisitor.visit_map(map)?)),
                     "answer" => Ok(Signal::Answer(SessionDescriptionVisitor.visit_map(map)?)),
-                    "new_ice_candidate" => Ok(Signal::NewIceCandidate(IceCandidateVisitor.visit_map(map)?)),
-                    "assign" => Ok(Signal::assign(AssignedNameVisitor.visit_map(map)?.to_owned())),
-                    others => Err(M::Error::invalid_value(Unexpected::Str(others), &"offer, answer, new_ice_candidate, assign")),
-                }
+                    "new_ice_candidate" => {
+                        Ok(Signal::NewIceCandidate(IceCandidateVisitor.visit_map(map)?))
+                    }
+                    "assign" => Ok(Signal::assign(
+                        AssignedNameVisitor.visit_map(map)?.to_owned(),
+                    )),
+                    others => Err(M::Error::invalid_value(
+                        Unexpected::Str(others),
+                        &"offer, answer, new_ice_candidate, assign",
+                    )),
+                };
             }
         }
 
@@ -35,7 +42,7 @@ impl<'de> Visitor<'de> for SignalVisitor {
 }
 
 pub struct SessionDescriptionVisitor;
-impl<'de> Visitor<'de> for SessionDescriptionVisitor { 
+impl<'de> Visitor<'de> for SessionDescriptionVisitor {
     type Value = SessionDescriptionMessage;
     fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(formatter, "couldn't parse Signal type")
@@ -43,7 +50,7 @@ impl<'de> Visitor<'de> for SessionDescriptionVisitor {
 
     fn visit_map<M: MapAccess<'de>>(self, mut map: M) -> Result<Self::Value, M::Error> {
         let mut target = Err(M::Error::missing_field("target"));
-        let mut name:Result<&'de str, M::Error> = Err(M::Error::missing_field("name"));
+        let mut name: Result<&'de str, M::Error> = Err(M::Error::missing_field("name"));
         let mut sdp = Err(M::Error::missing_field("sdp"));
 
         while let Some((key, value)) = map.next_entry()? {
@@ -64,15 +71,15 @@ impl<'de> Visitor<'de> for SessionDescriptionVisitor {
 }
 
 pub struct IceCandidateVisitor;
-impl<'de> Visitor<'de> for IceCandidateVisitor { 
+impl<'de> Visitor<'de> for IceCandidateVisitor {
     type Value = IceCandidate;
     fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(formatter, "couldn't parse Signal type")
     }
 
     fn visit_map<M: MapAccess<'de>>(self, mut map: M) -> Result<Self::Value, M::Error> {
-        let mut target:Result<&'de str, M::Error> = Err(M::Error::missing_field("target"));
-        let mut candidate :Result<&'de str, M::Error>= Err(M::Error::missing_field("candidate"));
+        let mut target: Result<&'de str, M::Error> = Err(M::Error::missing_field("target"));
+        let mut candidate: Result<&'de str, M::Error> = Err(M::Error::missing_field("candidate"));
 
         while let Some((key, value)) = map.next_entry()? {
             match key {
@@ -90,14 +97,14 @@ impl<'de> Visitor<'de> for IceCandidateVisitor {
 }
 
 pub struct AssignedNameVisitor;
-impl<'de> Visitor<'de> for AssignedNameVisitor { 
+impl<'de> Visitor<'de> for AssignedNameVisitor {
     type Value = &'de str;
     fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(formatter, "couldn't parse Signal type")
     }
 
     fn visit_map<M: MapAccess<'de>>(self, mut map: M) -> Result<Self::Value, M::Error> {
-        while let Some((key, value)) = map.next_entry()?  as Option<(&'de str, &'de str)>{
+        while let Some((key, value)) = map.next_entry()? as Option<(&'de str, &'de str)> {
             if key == "name" {
                 return Ok(value);
             }
