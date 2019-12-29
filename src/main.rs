@@ -12,7 +12,7 @@ mod signal_router;
 
 type SignalServerStateData = web::Data<SignalServerState>;
 
-async fn index(
+async fn signal(
     state: SignalServerStateData,
     request: HttpRequest,
     stream: web::Payload,
@@ -220,7 +220,7 @@ async fn main() -> std::io::Result<()> {
         App::new()
             .data(state.clone())
             .wrap(middleware::Logger::default())
-            .service(web::resource("/signal").to(index))
+            .service(web::resource("/signal").to(signal))
     })
     .bind("0.0.0.0:8080")?
     .run()
