@@ -138,6 +138,29 @@ mod test {
     use std::sync::{Arc, Mutex};
 
     #[actix_rt::test]
+    async fn test_messaging() -> std::io::Result<()> {
+        //given
+        let testing_env = RouteTestingEnvironment::new().await;
+        let signal_text = format!(
+            "{{\"type\":\"offer\",\"name\":\"{}\",\"target\":\"{}\",\"sdp\":\"dummy sdp\"}}",
+            RouteTestingEnvironment::caller_name(),
+            RouteTestingEnvironment::callee_name()
+        );
+        let offer_signal: Signal = serde_json::from_str(&signal_text).unwrap();
+
+        //when
+        let signal_result = testing_env
+            .router_addr
+            .send(SignalMessage::from(offer_signal.clone()))
+            .await;
+
+        assert!(signal_result.is_ok());
+        assert!(signal_result.unwrap().is_ok());
+
+        Ok(())
+    }
+
+    #[actix_rt::test]
     async fn test_routing() -> std::io::Result<()> {
         //given
         let testing_env = RouteTestingEnvironment::new().await;
