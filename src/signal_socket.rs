@@ -1,4 +1,4 @@
-use actix::prelude::{Actor, ActorContext, Addr, AsyncContext, Handler, StreamHandler,Recipient};
+use actix::prelude::{Actor, ActorContext, Addr, AsyncContext, Handler, Recipient, StreamHandler};
 use actix_web_actors::ws;
 use futures::executor::block_on;
 
@@ -45,9 +45,10 @@ impl Actor for SignalSocket {
     type Context = ws::WebsocketContext<Self>;
 
     fn started(&mut self, context: &mut Self::Context) {
-        let joining_router_fut = self
-            .signal_router
-            .send(JoinMessage::new(self.user_name.clone(), context.address().recipient()));
+        let joining_router_fut = self.signal_router.send(JoinMessage::new(
+            self.user_name.clone(),
+            context.address().recipient(),
+        ));
 
         if block_on(joining_router_fut).is_ok() {
             context.text(Signal::assign(self.user_name.clone()).to_string());
