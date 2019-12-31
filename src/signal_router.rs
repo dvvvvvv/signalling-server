@@ -1,7 +1,7 @@
 use super::signal::Signal;
 use super::SignalSocket;
 use actix::fut::wrap_future;
-use actix::prelude::{Actor, Addr, Context, Handler, Message, ResponseActFuture};
+use actix::prelude::{Actor, Addr, Context, Handler, Message, ResponseActFuture, Recipient};
 use futures::TryFutureExt;
 use std::collections::HashMap;
 use std::future::Future;
@@ -10,7 +10,7 @@ use super::Error;
 
 #[derive(Default)]
 pub struct SignalRouter {
-    sockets: HashMap<String, Addr<SignalSocket>>,
+    sockets: HashMap<String, Recipient<Signal>>,
 }
 
 impl Actor for SignalRouter {
@@ -18,7 +18,7 @@ impl Actor for SignalRouter {
 }
 
 impl SignalRouter {
-    fn target(&self, target_name: &str) -> Option<&Addr<SignalSocket>> {
+    fn target(&self, target_name: &str) -> Option<&Recipient<Signal>> {
         self.sockets.get(target_name)
     }
 
@@ -76,7 +76,7 @@ impl Handler<JoinMessage> for SignalRouter {
 
     fn handle(&mut self, message: JoinMessage, _: &mut Self::Context) -> Self::Result {
         self.sockets
-            .insert(message.user_name, message.signal_socket_addr);
+            .insert(message.user_name, message.signal_recipient);
         Ok(())
     }
 }
@@ -104,14 +104,14 @@ impl From<Signal> for SignalMessage {
 
 pub struct JoinMessage {
     user_name: String,
-    signal_socket_addr: Addr<SignalSocket>,
+    signal_recipient: Recipient<Signal>,
 }
 
 impl JoinMessage {
-    pub fn new(user_name: String, signal_socket_addr: Addr<SignalSocket>) -> Self {
+    pub fn new(user_name: String, signal_recipient: Recipient<Signal>) -> Self {
         JoinMessage {
             user_name,
-            signal_socket_addr,
+            signal_recipient,
         }
     }
 }
