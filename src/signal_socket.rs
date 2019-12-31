@@ -27,9 +27,8 @@ impl SignalSocket {
             .send(SignalMessage::from(signal_message))
             .await
             .unwrap_or_else(|mailbox_error| Err(into_service_releated_error(mailbox_error)));
-        match signal_routing_result {
-            Ok(_) => {} //do nothing
-            Err(err) => context.text(&serde_json::to_string(&ErrorMessage::from(err)).unwrap()),
+        if let Err(err) = signal_routing_result {
+            context.text(&serde_json::to_string(&ErrorMessage::from(err)).unwrap())
         }
     }
 }
