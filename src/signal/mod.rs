@@ -5,7 +5,7 @@ use serde_json;
 mod deserialize;
 mod serialize;
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Signal {
     Offer(SessionDescriptionMessage),
     Answer(SessionDescriptionMessage),
@@ -13,14 +13,14 @@ pub enum Signal {
     Assign(String),
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct SessionDescriptionMessage {
     pub target: String,
     pub name: String,
     sdp: String,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct IceCandidate {
     pub target: String,
     candidate: String,
