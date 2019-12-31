@@ -1,7 +1,6 @@
 use super::signal::Signal;
-use super::SignalSocket;
 use actix::fut::wrap_future;
-use actix::prelude::{Actor, Addr, Context, Handler, Message, Recipient, ResponseActFuture};
+use actix::prelude::{Actor, Context, Handler, Message, Recipient, ResponseActFuture};
 use futures::TryFutureExt;
 use std::collections::HashMap;
 use std::future::Future;

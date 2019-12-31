@@ -1,4 +1,4 @@
-use actix::prelude::{Actor, ActorContext, Addr, AsyncContext, Handler, Recipient, StreamHandler};
+use actix::prelude::{Actor, ActorContext, Addr, AsyncContext, Handler, StreamHandler};
 use actix_web_actors::ws;
 use futures::executor::block_on;
 
