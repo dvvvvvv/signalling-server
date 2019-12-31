@@ -1,7 +1,7 @@
 use super::signal::Signal;
 use super::SignalSocket;
 use actix::fut::wrap_future;
-use actix::prelude::{Actor, Addr, Context, Handler, Message, ResponseActFuture, Recipient};
+use actix::prelude::{Actor, Addr, Context, Handler, Message, Recipient, ResponseActFuture};
 use futures::TryFutureExt;
 use std::collections::HashMap;
 use std::future::Future;
@@ -130,4 +130,59 @@ impl From<String> for ExitMessage {
     fn from(name: String) -> Self {
         ExitMessage(name)
     }
+}
+
+#[cfg(test)]
+#[derive(Default)]
+struct MockSignalHandler {
+    last_received_message: std::sync::Arc<std::sync::Mutex<Option<Signal>>>,
+}
+
+#[cfg(test)]
+impl Actor for MockSignalHandler {
+    type Context = Context<Self>;
+}
+
+#[cfg(test)]
+impl Handler<Signal> for MockSignalHandler {
+    type Result = <Signal as Message>::Result;
+
+    fn handle(&mut self, message: Signal, _: &mut Self::Context) -> Self::Result {
+        self.last_received_message.lock().unwrap().replace(message);
+        Ok(())
+    }
+}
+
+#[actix_rt::test]
+async fn test_routing() -> std::io::Result<()> {
+    let router_addr = SignalRouter::default().start();
+    let caller_actor = MockSignalHandler::default();
+    let caller_actor_addr = caller_actor.start();
+    let callee_actor = MockSignalHandler::default();
+    let message_placeholder = callee_actor.last_received_message.clone();
+    let callee_actor_addr = callee_actor.start();
+
+    let caller_join_fut = router_addr.send(JoinMessage::new(
+        "caller".to_owned(),
+        caller_actor_addr.recipient(),
+    ));
+    let callee_join_fut = router_addr.send(JoinMessage::new(
+        "callee".to_owned(),
+        callee_actor_addr.recipient(),
+    ));
+
+    assert!(caller_join_fut.await.is_ok());
+    assert!(callee_join_fut.await.is_ok());
+
+    let signal_text = r#"{"type":"offer","name":"caller","target":"callee","sdp":"dummy sdp"}"#;
+    let offer_signal: Signal = serde_json::from_str(signal_text).unwrap();
+
+    let signal_routing_fut = router_addr.send(SignalMessage::from(offer_signal.clone()));
+    assert!(signal_routing_fut.await.is_ok());
+
+    let resolved_signal_ref: &mut Option<Signal> = &mut message_placeholder.lock().unwrap();
+    assert!(resolved_signal_ref.is_some());
+    assert_eq!(&offer_signal, resolved_signal_ref.as_ref().unwrap());
+
+    Ok(())
 }
