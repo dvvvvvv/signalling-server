@@ -132,56 +132,105 @@ impl From<String> for ExitMessage {
 }
 
 #[cfg(test)]
-#[derive(Default)]
-struct MockSignalHandler {
-    last_received_message: std::sync::Arc<std::sync::Mutex<Option<Signal>>>,
-}
+mod test {
+    use super::{JoinMessage, Signal, SignalMessage, SignalRouter};
+    use actix::prelude::{Actor, Addr, Context, Handler, Message};
+    use std::sync::{Arc, Mutex};
 
-#[cfg(test)]
-impl Actor for MockSignalHandler {
-    type Context = Context<Self>;
-}
+    #[actix_rt::test]
+    async fn test_routing() -> std::io::Result<()> {
+        //given
+        let testing_env = RouteTestingEnvironment::new().await;
+        let signal_text = format!(
+            "{{\"type\":\"offer\",\"name\":\"{}\",\"target\":\"{}\",\"sdp\":\"dummy sdp\"}}",
+            RouteTestingEnvironment::caller_name(),
+            RouteTestingEnvironment::callee_name()
+        );
+        let offer_signal: Signal = serde_json::from_str(&signal_text).unwrap();
 
-#[cfg(test)]
-impl Handler<Signal> for MockSignalHandler {
-    type Result = <Signal as Message>::Result;
+        //when
+        testing_env
+            .router_addr
+            .send(SignalMessage::from(offer_signal.clone()))
+            .await
+            .unwrap()
+            .unwrap();
 
-    fn handle(&mut self, message: Signal, _: &mut Self::Context) -> Self::Result {
-        self.last_received_message.lock().unwrap().replace(message);
+        //then
+        let resolved_signal_ref: &mut Option<Signal> =
+            &mut testing_env.last_received_message.lock().unwrap();
+        assert!(resolved_signal_ref.is_some());
+        assert_eq!(&offer_signal, resolved_signal_ref.as_ref().unwrap());
+
         Ok(())
     }
-}
 
-#[actix_rt::test]
-async fn test_routing() -> std::io::Result<()> {
-    let router_addr = SignalRouter::default().start();
-    let caller_actor = MockSignalHandler::default();
-    let caller_actor_addr = caller_actor.start();
-    let callee_actor = MockSignalHandler::default();
-    let message_placeholder = callee_actor.last_received_message.clone();
-    let callee_actor_addr = callee_actor.start();
+    struct MockSignalHandler {
+        last_received_message: Arc<Mutex<Option<Signal>>>,
+    }
 
-    let caller_join_fut = router_addr.send(JoinMessage::new(
-        "caller".to_owned(),
-        caller_actor_addr.recipient(),
-    ));
-    let callee_join_fut = router_addr.send(JoinMessage::new(
-        "callee".to_owned(),
-        callee_actor_addr.recipient(),
-    ));
+    impl MockSignalHandler {
+        fn new(message_placeholder: Arc<Mutex<Option<Signal>>>) -> Self {
+            MockSignalHandler {
+                last_received_message: message_placeholder,
+            }
+        }
+    }
 
-    assert!(caller_join_fut.await.is_ok());
-    assert!(callee_join_fut.await.is_ok());
+    impl Actor for MockSignalHandler {
+        type Context = Context<Self>;
+    }
 
-    let signal_text = r#"{"type":"offer","name":"caller","target":"callee","sdp":"dummy sdp"}"#;
-    let offer_signal: Signal = serde_json::from_str(signal_text).unwrap();
+    impl Handler<Signal> for MockSignalHandler {
+        type Result = <Signal as Message>::Result;
 
-    let signal_routing_fut = router_addr.send(SignalMessage::from(offer_signal.clone()));
-    assert!(signal_routing_fut.await.is_ok());
+        fn handle(&mut self, message: Signal, _: &mut Self::Context) -> Self::Result {
+            self.last_received_message.lock().unwrap().replace(message);
+            Ok(())
+        }
+    }
 
-    let resolved_signal_ref: &mut Option<Signal> = &mut message_placeholder.lock().unwrap();
-    assert!(resolved_signal_ref.is_some());
-    assert_eq!(&offer_signal, resolved_signal_ref.as_ref().unwrap());
+    struct RouteTestingEnvironment {
+        last_received_message: Arc<Mutex<Option<Signal>>>,
+        router_addr: Addr<SignalRouter>,
+    }
 
-    Ok(())
+    impl RouteTestingEnvironment {
+        async fn new() -> Self {
+            let router_addr = SignalRouter::default().start();
+            let message_placeholder: Arc<Mutex<Option<Signal>>> = Default::default();
+            let caller_addr = MockSignalHandler::new(message_placeholder.clone()).start();
+            let callee_addr = MockSignalHandler::new(message_placeholder.clone()).start();
+
+            router_addr
+                .send(JoinMessage::new(
+                    Self::caller_name().to_owned(),
+                    caller_addr.clone().recipient(),
+                ))
+                .await
+                .expect("failed to join")
+                .expect("failed to join");
+            router_addr
+                .send(JoinMessage::new(
+                    Self::callee_name().to_owned(),
+                    callee_addr.clone().recipient(),
+                ))
+                .await
+                .expect("failed to join")
+                .expect("failed to join");
+
+            RouteTestingEnvironment {
+                last_received_message: message_placeholder,
+                router_addr,
+            }
+        }
+
+        const fn caller_name() -> &'static str {
+            "caller"
+        }
+
+        const fn callee_name() -> &'static str {
+            "callee"
+        }
+    }
 }
