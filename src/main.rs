@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use actix::prelude::{Actor, Addr};
 use actix_web::{middleware, web, App, HttpRequest, HttpServer, Responder};
 use actix_web_actors::ws;
@@ -13,7 +14,7 @@ mod signal;
 mod signal_router;
 mod signal_socket;
 
-type SignalServerStateData = web::Data<SignalServerState>;
+type SignalServerStateData = web::Data<Arc<SignalServerState>>;
 
 struct SignalServerState {
     signal_router: Addr<SignalRouter>,
@@ -42,7 +43,7 @@ async fn signal(
 async fn main() -> std::io::Result<()> {
     let signal_router = SignalRouter::default();
     let signal_router_addr = signal_router.start();
-    let state = web::Data::new(SignalServerState::new(signal_router_addr));
+    let state = Arc::new(SignalServerState::new(signal_router_addr));
     HttpServer::new(move || {
         App::new()
             .data(state.clone())
