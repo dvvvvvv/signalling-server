@@ -1,6 +1,5 @@
 use super::Error;
 use actix::Message;
-use serde_json;
 
 mod deserialize;
 mod serialize;
@@ -34,10 +33,4 @@ impl Signal {
 
 impl Message for Signal {
     type Result = Result<(), Error>;
-}
-
-impl ToString for Signal {
-    fn to_string(&self) -> String {
-        serde_json::to_string(self).unwrap()
-    }
 }

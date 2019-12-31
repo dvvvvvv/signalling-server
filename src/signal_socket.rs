@@ -51,7 +51,7 @@ impl Actor for SignalSocket {
         ));
 
         if block_on(joining_router_fut).is_ok() {
-            context.text(Signal::assign(self.user_name.clone()).to_string());
+            context.text(&serde_json::to_string(&Signal::assign(self.user_name.clone())).unwrap());
             println!("Signal Socket Opened")
         } else {
             context.stop();
