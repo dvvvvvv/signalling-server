@@ -10,9 +10,9 @@ pub struct SignalSocket {
 }
 
 impl SignalSocket {
-    pub fn new(user_name: String, signal_router: &Addr<SignalRouter>) -> Self {
+    pub fn new<T:ToString>(user_name: T, signal_router: &Addr<SignalRouter>) -> Self {
         SignalSocket {
-            user_name,
+            user_name: user_name.to_string(),
             signal_router: signal_router.clone(),
         }
     }

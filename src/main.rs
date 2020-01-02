@@ -33,7 +33,7 @@ async fn signal(
 ) -> impl Responder {
     let user_name = Uuid::new_v4();
     ws::start(
-        SignalSocket::new(user_name.to_hyphenated().to_string(), &state.signal_router),
+        SignalSocket::new(user_name.to_hyphenated(), &state.signal_router),
         &request,
         stream,
     )
