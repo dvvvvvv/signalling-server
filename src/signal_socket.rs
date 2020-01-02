@@ -26,18 +26,18 @@ impl SignalSocket {
             .signal_router
             .send(SignalMessage::from(signal_message))
             .await
-            .unwrap_or_else(|mailbox_error| Err(into_service_releated_error(mailbox_error)));
+            .unwrap_or_else(into_service_releated_error);
         if let Err(err) = signal_routing_result {
             context.text(&serde_json::to_string(&ErrorMessage::from(err)).unwrap())
         }
     }
 }
 
-fn into_service_releated_error(mailbox_error: actix::MailboxError) -> Error {
-    match mailbox_error {
+fn into_service_releated_error<T>(mailbox_error: actix::MailboxError) -> Result<T, Error> {
+    Err(match mailbox_error {
         actix::MailboxError::Closed => Error::ServiceUnavailable,
         actix::MailboxError::Timeout => Error::ServiceTimeout,
-    }
+    })
 }
 
 impl Actor for SignalSocket {

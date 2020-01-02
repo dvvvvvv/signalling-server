@@ -38,7 +38,7 @@ impl Handler<SignalMessage> for SignalRouter {
                 if let Some(target_socket) = self.target(&signal.target) {
                     let message_transfer_future = target_socket
                         .send(message.0)
-                        .unwrap_or_else(|mailbox_err| Err(into_target_related_error(mailbox_err)));
+                        .unwrap_or_else(into_target_related_error);
                     Self::wrap_future(message_transfer_future)
                 } else {
                     Self::wrap_future(futures::future::err(Error::TargetNotFound(
@@ -50,7 +50,7 @@ impl Handler<SignalMessage> for SignalRouter {
                 if let Some(target_socket) = self.target(&ice_candidate.target) {
                     let message_transfer_future = target_socket
                         .send(message.0)
-                        .unwrap_or_else(|mailbox_err| Err(into_target_related_error(mailbox_err)));
+                        .unwrap_or_else(into_target_related_error);
                     Self::wrap_future(message_transfer_future)
                 } else {
                     Self::wrap_future(futures::future::err(Error::TargetNotFound(
@@ -63,11 +63,11 @@ impl Handler<SignalMessage> for SignalRouter {
     }
 }
 
-fn into_target_related_error(mailbox_error: actix::MailboxError) -> Error {
-    match mailbox_error {
+fn into_target_related_error<T>(mailbox_error: actix::MailboxError) -> Result<T, Error> {
+    Err(match mailbox_error {
         actix::MailboxError::Closed => Error::ConnectionClosed,
         actix::MailboxError::Timeout => Error::ConnectionTimeout,
-    }
+    })
 }
 
 impl Handler<JoinMessage> for SignalRouter {
